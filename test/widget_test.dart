@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:only_dm/main.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 class FakePlatformWebViewController extends PlatformWebViewController {
@@ -92,8 +93,7 @@ void main() {
   testWidgets('OnlyDmApp smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const OnlyDmApp());
 
-    // Verify basic app title is present
-    expect(find.text('Direct'), findsOneWidget);
-    expect(find.text('Only DM (Nopamin)'), findsOneWidget);
+    // Verify WebViewWidget is present and fills the screen
+    expect(find.byType(WebViewWidget), findsOneWidget);
   });
 }

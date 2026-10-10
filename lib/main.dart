@@ -71,6 +71,53 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
     }
   }
 
+  // 0. Global CSS style injection to instantly hide explore/search/reels/home icons
+  const styleId = 'nopamin-blocker-style';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      /* Hide all explore & search navigation links (돋보기) */
+      a[href*="/explore"],
+      a[href^="/explore"],
+      a[href*="explore"],
+      a[href*="/search"],
+      a[href="/"],
+      a[href^="/reels/"],
+      /* Hide all variations of search, explore, home, reels by aria-label */
+      [aria-label*="Search" i],
+      [aria-label*="search" i],
+      [aria-label*="Explore" i],
+      [aria-label*="explore" i],
+      [aria-label*="검색"],
+      [aria-label*="탐색"],
+      [aria-label*="Home" i],
+      [aria-label*="홈"],
+      [aria-label*="Reels" i],
+      [aria-label*="릴스"],
+      [aria-label*="New post" i],
+      [aria-label*="새로운 게시물"],
+      /* Magnifying glass svg paths */
+      svg circle[cx="11"][cy="11"],
+      svg circle[cx="10"][cy="10"],
+      svg path[d*="M19 10.5A8.5"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+
+      /* Keep search input field visible so user can search chats */
+      input[placeholder*="검색"],
+      input[type="text"],
+      input[type="search"] {
+        display: block !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
   // 1. Toast notification
   let toastTimer = null;
   function showToast(message) {
@@ -98,17 +145,42 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
     const path = window.location.pathname;
     const isInbox = path.startsWith('/direct/inbox') || path === '/direct/' || path === '/direct';
 
-    // A. Hide navigation bar icons (Home, Reels tab, Explore, Search, etc.)
-    const blockedLabels = ["Home", "홈", "Explore", "탐색", "Reels", "릴스", "Search", "검색", "New post", "새로운 게시물"];
-    blockedLabels.forEach(label => {
-      document.querySelectorAll('svg[aria-label="' + label + '"]').forEach(el => {
-        const parent = el.closest('a') || el.closest('div[role="button"]') || el.closest('div[role="tab"]');
-        if (parent) {
-          parent.style.setProperty('display', 'none', 'important');
-        } else {
-          el.style.setProperty('display', 'none', 'important');
+    // A. Hide explore / search navigation links (돋보기)
+    document.querySelectorAll('a[href*="explore"], a[href*="search"]').forEach(el => {
+      el.style.setProperty('display', 'none', 'important');
+      el.style.setProperty('visibility', 'hidden', 'important');
+      el.style.setProperty('pointer-events', 'none', 'important');
+    });
+
+    // B. Hide by aria-label substring across ALL tags (a, svg, div, button)
+    const blockedKeywords = ["search", "explore", "검색", "탐색", "home", "홈", "reels", "릴스", "new post", "새로운 게시물"];
+    document.querySelectorAll('[aria-label]').forEach(el => {
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return;
+      const label = (el.getAttribute('aria-label') || '').toLowerCase();
+      for (const kw of blockedKeywords) {
+        if (label.includes(kw)) {
+          const target = el.closest('a') || el.closest('div[role="button"]') || el.closest('div[role="tab"]') || el;
+          target.style.setProperty('display', 'none', 'important');
+          target.style.setProperty('visibility', 'hidden', 'important');
+          target.style.setProperty('pointer-events', 'none', 'important');
+          break;
         }
-      });
+      }
+    });
+
+    // C. Hide any SVG with magnifying glass circle geometry
+    document.querySelectorAll('svg').forEach(svg => {
+      const isSearchIcon = svg.querySelector('circle[cx="11"], circle[cx="10"], path[d*="M19 10.5"], path[d*="M18.5 10.5"]');
+      if (isSearchIcon) {
+        const parent = svg.closest('a') || svg.closest('div[role="button"]') || svg.closest('div[role="tab"]');
+        if (parent && !parent.querySelector('input')) {
+          parent.style.setProperty('display', 'none', 'important');
+          parent.style.setProperty('visibility', 'hidden', 'important');
+          parent.style.setProperty('pointer-events', 'none', 'important');
+        } else {
+          svg.style.setProperty('display', 'none', 'important');
+        }
+      }
     });
 
     // B. Re-route home links to DM inbox
@@ -484,101 +556,23 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
-          elevation: 0.5,
-          scrolledUnderElevation: 1,
-          backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-          titleSpacing: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-            tooltip: '뒤로가기',
-            onPressed: () async {
-              if (await _controller.canGoBack()) {
-                await _controller.goBack();
-              }
-            },
-          ),
-          title: Row(
+        backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+        body: SafeArea(
+          child: Stack(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFF58529),
-                      Color(0xFFDD2A7B),
-                      Color(0xFF8134AF),
-                      Color(0xFF515BD4),
-                    ],
-                    begin: Alignment.bottomLeft,
-                    end: Alignment.topRight,
-                  ),
-                ),
-                child: const Icon(
-                  Icons.send_rounded,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Direct',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  Text(
-                    'Only DM (Nopamin)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.grey[400] : Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.home_outlined),
-              tooltip: 'DM 홈으로',
-              onPressed: () {
-                _controller.loadRequest(Uri.parse(_dmInboxUrl));
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: '새로고침',
-              onPressed: () {
-                _controller.reload();
-              },
-            ),
-            const SizedBox(width: 4),
-          ],
-          bottom: _isLoading
-              ? PreferredSize(
-                  preferredSize: const Size.fromHeight(2),
+              WebViewWidget(controller: _controller),
+              if (_isLoading)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
                   child: LinearProgressIndicator(
                     value: _loadingProgress > 0 ? _loadingProgress / 100.0 : null,
                     minHeight: 2,
                     color: const Color(0xFFE1306C),
                     backgroundColor: Colors.transparent,
                   ),
-                )
-              : null,
-        ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              WebViewWidget(controller: _controller),
+                ),
               if (_hasError)
                 Container(
                   color: isDark ? const Color(0xFF121212) : Colors.white,
