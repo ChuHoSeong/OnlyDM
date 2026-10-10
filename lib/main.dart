@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,47 +55,50 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
   static const String _dmInboxUrl = 'https://www.instagram.com/direct/inbox/';
 
   late final WebViewController _controller;
+  Timer? _injectionTimer;
   int _loadingProgress = 0;
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
 
-  // JavaScript snippet to block dopamine elements (Home, Explore, Reels buttons),
-  // hide the top-left back button in the inbox header, and prevent SPA navigation to feed.
+  // JavaScript snippet to block dopamine elements, lock reels to a single video,
+  // hide inbox top-left back button, and prevent SPA navigation to feed.
   static const String _hideDistractionsJs = '''
 (function() {
-  // 1. Inject global blocker styles
-  const styleId = 'nopamin-blocker-style';
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      /* Hide feed, explore, reels navigation icons */
-      a[href="/"],
-      a[href="/explore/"],
-      a[href^="/reels/"],
-      svg[aria-label="Home"],
-      svg[aria-label="홈"],
-      svg[aria-label="Explore"],
-      svg[aria-label="탐색"],
-      svg[aria-label="Reels"],
-      svg[aria-label="릴스"],
-      svg[aria-label="Search"],
-      svg[aria-label="검색"],
-      svg[aria-label="New post"],
-      svg[aria-label="새로운 게시물"] {
-        display: none !important;
-      }
-    `;
-    (document.head || document.documentElement).appendChild(style);
+  function log(msg) {
+    if (window.AppLog) {
+      window.AppLog.postMessage(msg);
+    }
   }
 
-  function cleanDistractions() {
-    const isInbox = window.location.pathname.startsWith('/direct/inbox') ||
-                    window.location.pathname === '/direct/' ||
-                    window.location.pathname === '/direct';
+  // 1. Toast notification
+  let toastTimer = null;
+  function showToast(message) {
+    let toast = document.getElementById('nopamin-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'nopamin-toast';
+      toast.style.cssText = 'position:fixed;bottom:75px;left:50%;transform:translateX(-50%);' +
+        'background:rgba(20,20,20,0.92);color:#fff;padding:10px 20px;border-radius:24px;' +
+        'font-size:13px;font-weight:600;z-index:9999999;pointer-events:none;' +
+        'box-shadow:0 6px 18px rgba(0,0,0,0.5);transition:opacity 0.25s ease;text-align:center;' +
+        'white-space:nowrap;border:1px solid rgba(255,255,255,0.2);';
+      (document.body || document.documentElement).appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      if (toast) toast.style.opacity = '0';
+    }, 1800);
+  }
 
-    // A. Hide navigation icons (Home, Reels, Explore, etc.)
+  // 2. Hide Navigation icons & DM Inbox Back button
+  function cleanDistractions() {
+    const path = window.location.pathname;
+    const isInbox = path.startsWith('/direct/inbox') || path === '/direct/' || path === '/direct';
+
+    // A. Hide navigation bar icons (Home, Reels tab, Explore, Search, etc.)
     const blockedLabels = ["Home", "홈", "Explore", "탐색", "Reels", "릴스", "Search", "검색", "New post", "새로운 게시물"];
     blockedLabels.forEach(label => {
       document.querySelectorAll('svg[aria-label="' + label + '"]').forEach(el => {
@@ -106,40 +111,7 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
       });
     });
 
-    // B. Block and hide the top-left back button ONLY when inside the DM inbox
-    if (isInbox) {
-      // 1) By aria-label
-      const backLabels = ["Back", "뒤로", "뒤로 가기", "뒤로가기", "이전", "Home", "홈"];
-      backLabels.forEach(label => {
-        document.querySelectorAll('svg[aria-label="' + label + '"]').forEach(svg => {
-          const btn = svg.closest('a') || svg.closest('button') || svg.closest('div[role="button"]') || svg;
-          btn.style.setProperty('display', 'none', 'important');
-          btn.style.setProperty('pointer-events', 'none', 'important');
-        });
-      });
-
-      // 2) Any top-left button/svg in the header (X < 75px, Y < 75px)
-      document.querySelectorAll('header div[role="button"], header button, header a, header svg, div[role="navigation"] button, div[role="navigation"] a').forEach(el => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top >= 0 && rect.top < 75 && rect.left >= 0 && rect.left < 75 && rect.width > 0) {
-          el.style.setProperty('display', 'none', 'important');
-          el.style.setProperty('pointer-events', 'none', 'important');
-          el.style.setProperty('visibility', 'hidden', 'important');
-        }
-      });
-
-      // 3) Any general SVG with arrow left coordinates in top-left
-      document.querySelectorAll('svg').forEach(svg => {
-        const rect = svg.getBoundingClientRect();
-        if (rect.top >= 0 && rect.top < 75 && rect.left >= 0 && rect.left < 75 && rect.width > 0) {
-          const btn = svg.closest('a') || svg.closest('button') || svg.closest('div[role="button"]') || svg;
-          btn.style.setProperty('display', 'none', 'important');
-          btn.style.setProperty('pointer-events', 'none', 'important');
-        }
-      });
-    }
-
-    // C. Re-route any home links to DM inbox
+    // B. Re-route home links to DM inbox
     document.querySelectorAll('a[href="/"]').forEach(el => {
       el.href = 'https://www.instagram.com/direct/inbox/';
       el.onclick = (e) => {
@@ -148,9 +120,135 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
         window.location.href = 'https://www.instagram.com/direct/inbox/';
       };
     });
+
+    // C. HIDE INBOX TOP-LEFT BACK BUTTON
+    if (isInbox) {
+      // Find by aria-label
+      const backLabels = ["Back", "뒤로", "뒤로 가기", "뒤로가기", "이전", "Home", "홈"];
+      backLabels.forEach(label => {
+        document.querySelectorAll('svg[aria-label="' + label + '"]').forEach(svg => {
+          const btn = svg.closest('div[role="button"]') || svg.closest('button') || svg.closest('a') || svg;
+          btn.style.setProperty('display', 'none', 'important');
+          btn.style.setProperty('visibility', 'hidden', 'important');
+          btn.style.setProperty('pointer-events', 'none', 'important');
+        });
+      });
+
+      // Find ANY clickable or SVG located in top-left area (X < 70, Y < 70)
+      const allTopLeft = document.querySelectorAll('svg, div[role="button"], button, a');
+      allTopLeft.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top >= 0 && rect.top < 70 && rect.left >= 0 && rect.left < 70 && rect.width > 0 && rect.height > 0) {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+        }
+      });
+    }
+
+    // D. REELS SCROLL LOCK (친구가 보낸 릴스 무한 스크롤 방지)
+    const videos = document.querySelectorAll('video');
+    const isReels = path.includes('/reel') || videos.length > 0;
+
+    if (isReels && videos.length > 0) {
+      videos.forEach(video => {
+        let p = video.parentElement;
+        while (p && p !== document.body && p !== document.documentElement) {
+          const cs = window.getComputedStyle(p);
+          if (cs.overflowY === 'scroll' || cs.overflowY === 'auto' ||
+              cs.scrollSnapType.indexOf('mandatory') !== -1 || cs.scrollSnapType.indexOf('proximity') !== -1) {
+            p.style.setProperty('overflow', 'hidden', 'important');
+            p.style.setProperty('overflow-y', 'hidden', 'important');
+            p.style.setProperty('scroll-snap-type', 'none', 'important');
+            p.style.setProperty('touch-action', 'none', 'important');
+            p.scrollTop = 0;
+          }
+          p = p.parentElement;
+        }
+      });
+    }
   }
 
-  // 2. Intercept click events in capture phase to block clicking the top-left area in inbox
+  // 3. Global Scroll Lock for Reels
+  if (!window._nopaminScrollLocked) {
+    window._nopaminScrollLocked = true;
+    window.addEventListener('scroll', function(e) {
+      const hasVideo = document.querySelector('video') !== null;
+      if (hasVideo || window.location.pathname.includes('/reel')) {
+        const target = e.target;
+        if (target && target !== document && target.scrollTop > 30) {
+          const isComments = target.closest && target.closest('[role="dialog"]');
+          if (!isComments) {
+            target.scrollTop = 0;
+            showToast('친구가 보낸 릴스만 시청할 수 있습니다 (스크롤 차단)');
+          }
+        }
+      }
+    }, true);
+  }
+
+  // 4. Touch Gestures Interception for Reels
+  if (!window._nopaminTouchHooked) {
+    window._nopaminTouchHooked = true;
+    let touchStartY = 0;
+    let touchStartX = 0;
+    let isTouchingVideo = false;
+
+    window.addEventListener('touchstart', function(e) {
+      if (e.touches && e.touches.length > 0) {
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        const hasVideo = document.querySelector('video') !== null;
+        const isReelUrl = window.location.pathname.includes('/reel');
+        const isCommentModal = e.target.closest && (e.target.closest('[role="dialog"] ul') || e.target.closest('[aria-label="댓글"]'));
+        isTouchingVideo = (hasVideo || isReelUrl) && !isCommentModal;
+      }
+    }, { passive: true, capture: true });
+
+    window.addEventListener('touchmove', function(e) {
+      if (isTouchingVideo && e.touches && e.touches.length > 0) {
+        const currentY = e.touches[0].clientY;
+        const currentX = e.touches[0].clientX;
+        const deltaY = Math.abs(currentY - touchStartY);
+        const deltaX = Math.abs(currentX - touchStartX);
+
+        // If swiping vertically on reel video
+        if (deltaY > 6 && deltaY > deltaX) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          showToast('친구가 보낸 릴스만 시청할 수 있습니다');
+          return false;
+        }
+      }
+    }, { passive: false, capture: true });
+
+    // Block mouse wheel and arrow keys on reels
+    window.addEventListener('wheel', function(e) {
+      const hasVideo = document.querySelector('video') !== null;
+      if (hasVideo || window.location.pathname.includes('/reel')) {
+        const isCommentModal = e.target.closest && e.target.closest('[role="dialog"] ul');
+        if (!isCommentModal) {
+          e.preventDefault();
+          e.stopPropagation();
+          showToast('친구가 보낸 릴스만 시청할 수 있습니다');
+        }
+      }
+    }, { passive: false, capture: true });
+
+    window.addEventListener('keydown', function(e) {
+      const hasVideo = document.querySelector('video') !== null;
+      if (hasVideo || window.location.pathname.includes('/reel')) {
+        if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp'].includes(e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          showToast('친구가 보낸 릴스만 시청할 수 있습니다');
+        }
+      }
+    }, true);
+  }
+
+  // 5. Intercept Click on Inbox Top-Left Back Button
   if (!window._nopaminClickIntercepted) {
     window._nopaminClickIntercepted = true;
     window.addEventListener('click', function(e) {
@@ -158,16 +256,15 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
                       window.location.pathname === '/direct/' ||
                       window.location.pathname === '/direct';
       if (isInbox) {
-        // If user clicks in top-left area where back arrow is located
-        if (e.clientX < 75 && e.clientY < 75) {
+        // If clicking in top-left area where back arrow is located (x < 70, y < 70)
+        if (e.clientX < 70 && e.clientY < 70) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
           return false;
         }
 
-        // If clicking any link targeting root feed
-        const link = e.target.closest('a');
+        const link = e.target.closest ? e.target.closest('a') : null;
         if (link) {
           const href = link.getAttribute('href') || link.pathname;
           if (href === '/' || href === 'https://www.instagram.com/' || href === '') {
@@ -181,16 +278,28 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
     }, true);
   }
 
-  // 3. Hook SPA pushState & replaceState to prevent React Router navigating to feed
+  // 6. Hook SPA pushState & replaceState
   if (!window._nopaminHistoryHooked) {
     window._nopaminHistoryHooked = true;
+    let allowedReelUrl = null;
+
     const origPush = history.pushState;
     history.pushState = function(state, title, url) {
       if (url) {
         const u = url.toString();
-        if (u === '/' || u === '' || u === 'https://www.instagram.com/' || u.includes('/explore') || u.includes('/reels')) {
-          console.warn('[OnlyDM] Prevented pushState navigation to feed:', u);
+        // Prevent feed or explore or reels explore tab
+        if (u === '/' || u === '' || u === 'https://www.instagram.com/' || u.includes('/explore') || u === '/reels/' || u === '/reels') {
           return;
+        }
+        // If moving to another reel while watching a reel
+        if (allowedReelUrl && (u.includes('/reel/') || u.includes('/reels/')) && !u.includes(allowedReelUrl)) {
+          showToast('친구가 보낸 릴스만 시청할 수 있습니다');
+          return;
+        }
+        if (u.includes('/reel/') || u.includes('/reels/')) {
+          if (!allowedReelUrl) allowedReelUrl = u;
+        } else {
+          allowedReelUrl = null;
         }
       }
       return origPush.apply(this, arguments);
@@ -200,9 +309,17 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
     history.replaceState = function(state, title, url) {
       if (url) {
         const u = url.toString();
-        if (u === '/' || u === '' || u === 'https://www.instagram.com/' || u.includes('/explore') || u.includes('/reels')) {
-          console.warn('[OnlyDM] Prevented replaceState navigation to feed:', u);
+        if (u === '/' || u === '' || u === 'https://www.instagram.com/' || u.includes('/explore') || u === '/reels/' || u === '/reels') {
           return;
+        }
+        if (allowedReelUrl && (u.includes('/reel/') || u.includes('/reels/')) && !u.includes(allowedReelUrl)) {
+          showToast('친구가 보낸 릴스만 시청할 수 있습니다');
+          return;
+        }
+        if (u.includes('/reel/') || u.includes('/reels/')) {
+          if (!allowedReelUrl) allowedReelUrl = u;
+        } else {
+          allowedReelUrl = null;
         }
       }
       return origReplace.apply(this, arguments);
@@ -214,7 +331,6 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
     window._nopaminObserverAttached = true;
     const observer = new MutationObserver(cleanDistractions);
     observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
-    // Also run periodically to catch any dynamic React re-renders
     setInterval(cleanDistractions, 500);
   }
 })();
@@ -224,12 +340,31 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
   void initState() {
     super.initState();
     _initWebViewController();
+
+    // Periodically re-inject to ensure all dynamic SPA page changes stay protected
+    _injectionTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      if (mounted) {
+        _injectDistractionCleaner();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _injectionTimer?.cancel();
+    super.dispose();
   }
 
   void _initWebViewController() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
+      ..addJavaScriptChannel(
+        'AppLog',
+        onMessageReceived: (JavaScriptMessage msg) {
+          debugPrint('[OnlyDM Web] ${msg.message}');
+        },
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
@@ -237,7 +372,7 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
               _loadingProgress = progress;
               _isLoading = progress < 100;
             });
-            if (progress > 50) {
+            if (progress > 40) {
               _injectDistractionCleaner();
             }
           },
@@ -251,11 +386,9 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
             setState(() {
               _isLoading = false;
             });
-            // Inject distraction-free style and script
             _injectDistractionCleaner();
           },
           onWebResourceError: (error) {
-            // Ignore minor resource errors (e.g. tracking scripts blocked)
             if (error.isForMainFrame ?? true) {
               setState(() {
                 _hasError = true;
@@ -269,10 +402,16 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
         ),
       )
       ..loadRequest(Uri.parse(_dmInboxUrl));
+
+    if (_controller.platform is AndroidWebViewController) {
+      AndroidWebViewController.enableDebugging(true);
+    }
   }
 
   void _injectDistractionCleaner() {
-    _controller.runJavaScript(_hideDistractionsJs).catchError((_) {});
+    _controller.runJavaScript(_hideDistractionsJs).catchError((e) {
+      debugPrint('[OnlyDM JS Error] $e');
+    });
   }
 
   NavigationDecision _handleNavigationRequest(NavigationRequest request) {
@@ -287,12 +426,22 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
         host.contains('facebook.com') ||
         host.contains('fbcdn.net') ||
         host.contains('cdninstagram.com')) {
-      // Specifically prevent feed, explore, reels, stories
+      // General explore, stories, or external posts
       if (path.startsWith('/explore') ||
-          path.startsWith('/reels') ||
           path.startsWith('/stories') ||
           (path.contains('/p/') && !path.startsWith('/direct/'))) {
         debugPrint('[OnlyDM] Dopamine navigation blocked: ${request.url}');
+        _controller.loadRequest(Uri.parse(_dmInboxUrl));
+        return NavigationDecision.prevent;
+      }
+
+      // Block general reels exploration feed (/reels or /reels/)
+      // But allow specific reel sent in chat (e.g. /reel/<shortcode>/ or /reels/<shortcode>/)
+      final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      final isGeneralReelsTab = (path == '/reels' || path == '/reels/') ||
+          (segments.length == 1 && segments[0] == 'reels');
+      if (isGeneralReelsTab) {
+        debugPrint('[OnlyDM] General reels feed blocked: ${request.url}');
         _controller.loadRequest(Uri.parse(_dmInboxUrl));
         return NavigationDecision.prevent;
       }
@@ -304,7 +453,7 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
         return NavigationDecision.prevent;
       }
 
-      // Allow direct messages, login, challenges, and APIs
+      // Allow direct messages, specific shared reels, login, challenges, and APIs
       return NavigationDecision.navigate;
     }
 

@@ -30,6 +30,10 @@ class FakePlatformWebViewController extends PlatformWebViewController {
 
   @override
   Future<void> reload() async {}
+
+  @override
+  Future<void> addJavaScriptChannel(
+      JavaScriptChannelParams javaScriptChannelParams) async {}
 }
 
 class FakePlatformWebViewWidget extends PlatformWebViewWidget {
