@@ -56,8 +56,7 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
 
   late final WebViewController _controller;
   Timer? _injectionTimer;
-  int _loadingProgress = 0;
-  bool _isLoading = true;
+
   bool _hasError = false;
   String _errorMessage = '';
 
@@ -440,24 +439,16 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
-            setState(() {
-              _loadingProgress = progress;
-              _isLoading = progress < 100;
-            });
             if (progress > 40) {
               _injectDistractionCleaner();
             }
           },
           onPageStarted: (url) {
             setState(() {
-              _isLoading = true;
               _hasError = false;
             });
           },
           onPageFinished: (url) {
-            setState(() {
-              _isLoading = false;
-            });
             _injectDistractionCleaner();
           },
           onWebResourceError: (error) {
@@ -561,18 +552,7 @@ class _InstagramDmScreenState extends State<InstagramDmScreen> {
           child: Stack(
             children: [
               WebViewWidget(controller: _controller),
-              if (_isLoading)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: LinearProgressIndicator(
-                    value: _loadingProgress > 0 ? _loadingProgress / 100.0 : null,
-                    minHeight: 2,
-                    color: const Color(0xFFE1306C),
-                    backgroundColor: Colors.transparent,
-                  ),
-                ),
+
               if (_hasError)
                 Container(
                   color: isDark ? const Color(0xFF121212) : Colors.white,
