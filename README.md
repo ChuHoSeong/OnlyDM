@@ -1,17 +1,82 @@
-# only_dm
+# OnlyDM 💬 (Nopamin)
 
-A new Flutter project.
+> **도파민 디톡스를 위한 인스타그램 다이렉트 메시지(DM) 전용 클라이언트 앱**  
+> 피드, 릴스 무한 스크롤, 탐색 탭 등 중독성 컨텐츠를 원천 차단하고 **오직 소통을 위한 DM 기능만** 온전히 사용할 수 있도록 제작되었습니다.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🎯 주요 기능 및 특징 (Features)
 
-A few resources to get you started if this is your first Flutter project:
+### 1. 📱 화면을 꽉 채우는 몰입형 풀스크린 웹뷰
+- 불필요한 상단 앱바나 헤더를 완전히 제거하여 인스타그램 DM 화면으로 디스플레이를 가득 채웁니다.
+- 안드로이드 시스템 뒤로가기 제스처 및 하드웨어 뒤로가기 버튼과 완벽하게 연동됩니다.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+### 2. 🚫 피드 및 탐색 탭(돋보기) 완벽 차단
+- 홈 피드(`/`), 릴스 탭(`/reels`), 탐색 탭(`/explore`)으로 연결되는 모든 링크와 아이콘을 브라우저 렌더링 레벨(CSS) 및 DOM 조작을 통해 완전 은닉합니다.
+- 인스타그램 웹 UI의 돋보기(탐색) 아이콘은 그래픽 형상(SVG Path)과 라벨을 추적하여 화면에 나타나지 않도록 처리했습니다. *(채팅방 목록 내 대화 검색 입력창은 정상 사용 가능)*
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### 3. 🔒 인박스 좌측 상단 뒤로가기 버튼 차단
+- 인스타그램 웹 DM 인박스 상단 좌측에 위치한 뒤로가기 화살표(`←`)를 실시간 감지하여 숨기고, 터치 이벤트를 캡처 단계에서 무효화하여 피드로 이탈하는 것을 방지합니다.
+- *(개별 대화방 내부의 뒤로가기 버튼은 인박스 목록 복귀용으로 정상 작동합니다)*
+
+### 4. 🎬 친구가 보낸 릴스 단일 시청 및 무한 스크롤 방지 (Single Reel Lock)
+- 대화 중 친구가 공유해 준 릴스 영상은 정상적으로 시청, 재생/일시정지, 음소거 해제가 가능합니다.
+- **수직 스와이프 제스처(`touchmove`, `wheel`, 방향키)를 가로채 차단**하고 스크롤 위치를 `scrollTop = 0`으로 강제 고정하여 다음 추천 릴스로 넘어가는 무한 스크롤을 방지합니다.
+- 스와이프 시도 시 `"친구가 보낸 릴스만 시청할 수 있습니다"` 안내 토스트가 노출됩니다.
+
+### 5. 🛡️ SPA 네비게이션 가드 (History API Hook)
+- 인스타그램의 React Router가 페이지 새로고침 없이 URL을 피드나 다른 릴스로 전환하려는 시도(`pushState`, `replaceState`)를 사전에 감지하여 차단합니다.
+- 주기적인 백그라운드 타이머를 통해 동적 재렌더링 시에도 차단 상태를 영구 유지합니다.
+
+---
+
+## 🛠️ 기술 스택 (Tech Stack)
+
+- **Framework**: Flutter (Channel stable, 3.47+)
+- **Language**: Dart, JavaScript (DOM / CSS / Touch / History API Injection)
+- **Engine**: Android WebView (`webview_flutter`, `webview_flutter_android`)
+- **Min SDK**: Android API 21+ (NDK 28.2 / r28c 지원)
+
+---
+
+## 🚀 시작하기 (Getting Started)
+
+### 사전 요구 사항
+- [Flutter SDK](https://flutter.dev/) 설치
+- Android SDK 및 NDK 28.2 설치
+
+### 실행 방법
+
+1. **저장소 클론 및 패키지 설치**:
+   ```bash
+   git clone <repository-url>
+   cd only_dm
+   flutter pub get
+   ```
+
+2. **기기 연결 확인**:
+   ```bash
+   flutter devices
+   ```
+
+3. **스마트폰 유선 연결 디버깅 및 실행**:
+   스마트폰에서 USB 디버깅을 활성화한 후 다음 명령어를 실행합니다:
+   ```bash
+   flutter run
+   ```
+
+---
+
+## 💡 개발 및 디버깅 팁
+
+### 웹뷰 실시간 원격 검사 (Chrome DevTools)
+스마트폰에서 앱을 실행한 상태로 PC 크롬 브라우저에서 웹 DOM, CSS, 콘솔 로그를 디버깅할 수 있습니다:
+1. 스마트폰을 PC에 유선 연결하고 앱을 실행합니다.
+2. PC 크롬 주소창에 `chrome://inspect/#devices` 입력 후 이동합니다.
+3. 연결된 기기 아래의 `OnlyDM` 타깃에서 **[inspect]**를 클릭하면 개발자 도구로 실시간 분석이 가능합니다.
+
+---
+
+## 📄 라이선스 (License)
+
+본 프로젝트는 개인적인 도파민 디톡스 및 생산성 향상 목적으로 제작되었습니다.

@@ -21,7 +21,7 @@ class OnlyDmApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Only DM',
+      title: 'OnlyDM',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
